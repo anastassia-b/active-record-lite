@@ -4,26 +4,27 @@ require 'active_support/inflector'
 class SQLObject
   def self.columns
     return @columns if @columns
-    columns = DBConnection.execute2(<<-SQL)
+    cols = DBConnection.execute2(<<-SQL).first
       SELECT
         *
       FROM
-        #{table_name}
+        #{self.table_name}
+      LIMIT
+        0
     SQL
-    @columns = columns.first.map!(&:to_sym)
+    cols.map!(&:to_sym)
+    @columns = cols
   end
 
   def self.finalize!
     self.columns.each do |name|
-
       define_method(name) do
         self.attributes[name]
       end
 
-      define_method("#{name}=") do |val|
-        self.attributes[name] = val
+      define_method("#{name}=") do |value|
+        self.attributes[name] = value
       end
-
     end
   end
 
@@ -47,9 +48,7 @@ class SQLObject
   end
 
   def self.parse_all(results)
-    results.map! do |result|
-      self.new(result)
-    end
+    results.map { |result| self.new(result) }
   end
 
   def self.find(id)
@@ -62,14 +61,17 @@ class SQLObject
         #{table_name}.id = ?
     SQL
 
-    results = parse_all(results).first
+    parse_all(results).first
   end
 
   def initialize(params = {})
     params.each do |attr_name, value|
       attr_name = attr_name.to_sym
-      raise "unknown attribute '#{attr_name}'" unless self.class.columns.include?(attr_name)
-      self.send("#{attr_name}=", value)
+      if self.class.columns.include?(attr_name)
+        self.send("#{attr_name}=", value)
+      else
+        raise "unknown attribute '#{attr_name}'"
+      end
     end
   end
 
@@ -78,15 +80,13 @@ class SQLObject
   end
 
   def attribute_values
-    self.class.columns.map do |attr|
-      self.send(attr)
-    end
+    self.class.columns.map { |attr| self.send(attr) }
   end
 
   def insert
     columns = self.class.columns.drop(1)
-    col_names = columns.join(",")
-    question_marks = (["?"] * columns.length).join(",")
+    col_names = columns.map(&:to_s).join(", ")
+    question_marks = (["?"] * columns.count).join(", ")
 
     DBConnection.execute(<<-SQL, *attribute_values.drop(1))
       INSERT INTO
@@ -99,7 +99,8 @@ class SQLObject
   end
 
   def update
-    set_line = self.class.columns.map { |attr| "#{attr} = ?" }.join(", ")
+    set_line = self.class.columns
+      .map { |attr| "#{attr} = ?" }.join(", ")
 
     DBConnection.execute(<<-SQL, *attribute_values, id)
       UPDATE
