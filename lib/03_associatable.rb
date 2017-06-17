@@ -10,17 +10,26 @@ class AssocOptions
   )
 
   def model_class
-    # ...
+    @class_name.constantize
   end
 
   def table_name
-    # ...
+    model_class.table_name
   end
 end
 
 class BelongsToOptions < AssocOptions
   def initialize(name, options = {})
-    # ...
+    defaults = {
+      :primary_key => :id,
+      :foreign_key => "#{name}_id".to_sym,
+      :class_name => name.camelcase
+    }
+    p defaults
+    p options
+    defaults.keys.each do |key|
+      #
+    end
   end
 end
 
